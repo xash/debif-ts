@@ -1,0 +1,25 @@
+{
+  "name": "debif-ts",
+  "version": "0.0.1",
+  "description": "Encoder & decoder of the deterministic binary format",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc"
+  },
+  "files": [
+  	"dist/*.js",
+  	"dist/*d.ts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xash/debif-ts.git"
+  },
+  "keywords": [
+    "debif"
+  ],
+  "author": "xash <xn--wxa.land>",
+  "license": "AGPL3",
+  "devDependencies": {
+    "typescript": "^5.2.2"
+  }
+}
