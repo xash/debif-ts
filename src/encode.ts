@@ -7,7 +7,7 @@ type Encoder = {
   maxSize: number,
 };
 
-export function encode(buf: ArrayBuffer, value: any) {
+export function encode(buf: ArrayBuffer, value: any): Uint8Array {
   const view = new Uint8Array(buf);
   const enc = {
     buf: buf,
@@ -16,7 +16,7 @@ export function encode(buf: ArrayBuffer, value: any) {
     i: view.length,
   };
   encodeRec(enc, value);
-  return enc.buf.slice(enc.i, enc.maxSize);
+  return new Uint8Array(enc.buf.slice(enc.i, enc.maxSize));
 }
 
 function writeHeader(enc: Encoder, kind: number, length: number | bigint) {
@@ -47,10 +47,9 @@ function encodeRec(enc: Encoder, v: any) {
   const type = typeof (v);
   switch (type) {
     case 'number': {
-      if (v % 1 == 0 && v > -(1 << 53) && v < (1 << 53)) {
-        const i = BigInt(v);
-        const zigzag = (i >> BigInt(52)) ^ (i << BigInt(1));
-        writeHeader(enc, 0, zigzag);
+      if (v > -Number(BigInt(1) << BigInt(53)) && v < Number(BigInt(1) << BigInt(53))) {
+        if (v >= 0) writeHeader(enc, 0, v);
+        else writeHeader(enc, 1, -v - 1);
       } else {
         throw new Error("not implemented");
       }
@@ -66,15 +65,21 @@ function encodeRec(enc: Encoder, v: any) {
       break;
     }
     case 'object': {
-      if (v instanceof Array) {
-        const start = enc.i;
-        for (const value of v) encodeRec(enc, value);
-        writeHeader(enc, 5, start - enc.i);
-      } else if (v instanceof Uint8Array) {
+      if (v instanceof Uint8Array) {
         enc.i -= v.length;
         if (enc.i < 0) throw RangeError;
         enc.view.set(v, enc.i);
         writeHeader(enc, 2, v.length);
+      } else if (v instanceof ArrayBuffer) {
+        const w = new Uint8Array(v);
+        enc.i -= w.length;
+        if (enc.i < 0) throw RangeError;
+        enc.view.set(w, enc.i);
+        writeHeader(enc, 2, w.length);
+      } else if (v instanceof Array) {
+        const start = enc.i;
+        for (let i = v.length - 1; i >= 0; i--) encodeRec(enc, v[i]);
+        writeHeader(enc, 4, start - enc.i);
       } else {
         const keys = [];
         for (const key in v) keys.push(key);

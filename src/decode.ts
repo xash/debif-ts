@@ -2,7 +2,7 @@ const offset = 32 - 4;
 
 type Decoder = {
   i: number,
-  buf: ArrayBuffer,
+  buf: Uint8Array,
   view: Uint8Array,
 };
 
@@ -15,19 +15,19 @@ function decodeHeader(dec: Decoder) {
   var ext = undefined;
   if (len == offset) {
     if (dec.i + 1 > dec.view.length) throw RangeError;
-    ext = new DataView(dec.buf, dec.i, 1).getUint8(0),
+    ext = new DataView(dec.buf.buffer, dec.buf.byteOffset + dec.i, 1).getUint8(0),
       dec.i += 1;
   } else if (len == offset + 1) {
     if (dec.i + 2 > dec.view.length) throw RangeError;
-    ext = new DataView(dec.buf, dec.i, 2).getUint16(0, true);
+    ext = new DataView(dec.buf.buffer, dec.buf.byteOffset + dec.i, 2).getUint16(0, true);
     dec.i += 2;
   } else if (len == offset + 2) {
     if (dec.i + 4 > dec.view.length) throw RangeError;
-    ext = new DataView(dec.buf, dec.i, 4).getUint32(0, true);
+    ext = new DataView(dec.buf.buffer, dec.buf.byteOffset + dec.i, 4).getUint32(0, true);
     dec.i += 4;
   } else {
     if (dec.i + 8 > dec.view.length) throw RangeError;
-    ext = new DataView(dec.buf, dec.i, 8).getBigUint64(0, true);
+    ext = new DataView(dec.buf.buffer, dec.buf.byteOffset + dec.i, 8).getBigUint64(0, true);
     if (ext < -(1 << 53) && ext > (1 << 53)) throw RangeError;
     ext = Number(ext);
     dec.i += 8;
@@ -39,8 +39,10 @@ function decodeRec(dec: Decoder) {
   const [kind, lenBits, len] = decodeHeader(dec);
   switch (kind) {
     case 0: {
-      const bi = BigInt(len);
-      return Number((bi >> BigInt(1)) ^ -(bi & BigInt(1)));
+      return len;
+    }
+    case 1: {
+      return -len - 1;
     }
     case 2: {
       if (dec.i + len > dec.view.length) throw RangeError;
@@ -83,7 +85,7 @@ function decodeRec(dec: Decoder) {
 }
 
 export function decode(buf: ArrayBuffer) {
-  return decodeRec({
+  return decodeRec(<Decoder>{
     i: 0,
     buf: buf,
     view: new Uint8Array(buf),
