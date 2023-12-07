@@ -1,42 +1,48 @@
-const offset = 32 - 4;
+'use strict';
 
 type Decoder = {
   i: number,
   buf: Uint8Array,
-  view: Uint8Array,
+  view: DataView,
 };
 
 function decodeHeader(dec: Decoder) {
-  if (dec.i == dec.view.length) throw RangeError;
-  const byte = dec.view[dec.i++];
-  const kind = (byte >> 5) & 0b111;
-  const len = byte & 0b11111;
-  if (len < offset) return [kind, len, len];
-  var ext = undefined;
-  if (len == offset) {
-    if (dec.i + 1 > dec.view.length) throw RangeError;
-    ext = new DataView(dec.buf.buffer, dec.buf.byteOffset + dec.i, 1).getUint8(0),
-      dec.i += 1;
-  } else if (len == offset + 1) {
-    if (dec.i + 2 > dec.view.length) throw RangeError;
-    ext = new DataView(dec.buf.buffer, dec.buf.byteOffset + dec.i, 2).getUint16(0, true);
-    dec.i += 2;
-  } else if (len == offset + 2) {
-    if (dec.i + 4 > dec.view.length) throw RangeError;
-    ext = new DataView(dec.buf.buffer, dec.buf.byteOffset + dec.i, 4).getUint32(0, true);
-    dec.i += 4;
-  } else {
-    if (dec.i + 8 > dec.view.length) throw RangeError;
-    ext = new DataView(dec.buf.buffer, dec.buf.byteOffset + dec.i, 8).getBigUint64(0, true);
-    if (ext < -(1 << 53) && ext > (1 << 53)) throw RangeError;
-    ext = Number(ext);
-    dec.i += 8;
+  const buf = dec.buf;
+  const len = buf[dec.i++] & 0b11111;
+  if (len < 16) return len;
+  if (len < 28) return (1 << (len - 12)) >>> 0;
+  if (dec.i + (1 << (len - 28)) > buf.length) throw RangeError;
+  switch (len) {
+    case 28:
+      return buf[dec.i++] + 16;
+    case 29: {
+      let ext = buf[dec.i++];
+      ext += buf[dec.i++] << 8;
+      return ext + 272;
+    }
+    case 30: {
+      let ext = buf[dec.i++];
+      ext += buf[dec.i++] << 8;
+      ext += (buf[dec.i++] << 16) >>> 0;
+      ext += (buf[dec.i++] << 24) >>> 0;
+      return ext + 65808;
+    }
+    default: {
+      let ext = new DataView(dec.buf.buffer, dec.buf.byteOffset + dec.i, 8).getBigUint64(0, true);
+      ext += BigInt(4295033104)
+      if (ext > BigInt(Number.MAX_SAFE_INTEGER)) throw RangeError;
+      dec.i += 8;
+      return Number(ext);
+    }
   }
-  return [kind, len, ext];
 }
 
-function decodeRec(dec: Decoder) {
-  const [kind, lenBits, len] = decodeHeader(dec);
+const utf8Decoder = new TextDecoder();
+function decodeRec(dec: Decoder): any {
+  const buf = dec.buf;
+  if (dec.i >= buf.length) throw RangeError;
+  const kind = (buf[dec.i] >> 5) & 0b111;
+  const len = decodeHeader(dec);
   switch (kind) {
     case 0: {
       return len;
@@ -45,21 +51,19 @@ function decodeRec(dec: Decoder) {
       return -len - 1;
     }
     case 2: {
-      if (dec.i + len > dec.view.length) throw RangeError;
-      const buf = dec.view.slice(dec.i, dec.i + len);
+      if (dec.i + len > buf.length) throw RangeError;
       dec.i += len;
-      return buf;
+      return buf.subarray(dec.i - len, dec.i);
     }
     case 3: {
-      if (dec.i + len > dec.view.length) throw RangeError;
-      const view = dec.view.slice(dec.i, dec.i + len);
+      if (dec.i + len > buf.length) throw RangeError;
       dec.i += len;
-      return new TextDecoder().decode(view);
+      return utf8Decoder.decode(buf.subarray(dec.i - len, dec.i));
     }
     case 4: {
       const ret = [];
       const start = dec.i;
-      if (dec.i + len > dec.view.length) throw RangeError;
+      if (dec.i + len > buf.length) throw RangeError;
       while (dec.i < start + len)
         ret.push(decodeRec(dec));
       if (dec.i != start + len) throw RangeError;
@@ -68,26 +72,26 @@ function decodeRec(dec: Decoder) {
     case 5: {
       const ret = {};
       const start = dec.i;
-      if (dec.i + len > dec.view.length) throw RangeError;
+      if (dec.i + len > buf.length) throw RangeError;
       var prevName = null;
       while (dec.i < start + len) {
         const key = decodeRec(dec);
         if (typeof key != 'string') throw RangeError;
         if (prevName && key <= prevName) throw RangeError;
-        const value = decodeRec(dec);
-        ret[<string>key] = value;
+        ret[key] = decodeRec(dec);
       }
       if (dec.i != start + len) throw RangeError;
       return ret;
     }
+    default: throw new Error("unsupported kind");
   }
   throw RangeError;
 }
 
-export function decode(buf: ArrayBuffer) {
+export function decode(buf: Uint8Array): any {
   return decodeRec(<Decoder>{
     i: 0,
     buf: buf,
-    view: new Uint8Array(buf),
+    view: new DataView(buf.buffer),
   });
 }

@@ -1,19 +1,26 @@
 import { expect, test } from 'vitest'
 import { decode, encode } from './index'
 
-const buf = new ArrayBuffer(1 << 16);
+const buf = new Uint8Array(1 << 12);
 
 test('small numbers', () => {
-  for (let i = -300; i < 300; i++)
+  for (let i = -3000; i < 3000; i++)
     expect(decode(encode(buf, i))).toBe(i);
 })
 
 test('numbers', () => {
   for (let e = 0; e < 53; e++) {
-    const j = Number(BigInt(1) << BigInt(e));
-    expect(decode(encode(buf, j))).toBe(j);
-    expect(decode(encode(buf, -j))).toBe(-j);
+    for (let o = 0; o < 1; o++) {
+      const j = Number(BigInt(1) << BigInt(e));
+      expect(decode(encode(buf, j - o))).toBe(j - o);
+      expect(decode(encode(buf, -j + o))).toBe(-j + o);
+    }
   }
+})
+
+test('text', () => {
+  for (let str of ['z', 'foo', 'bazbaz', 'foobarbazbazbazbaz'])
+    expect(decode(encode(buf, str))).toBe(str);
 })
 
 test('complex', () => {
@@ -28,6 +35,6 @@ test('complex', () => {
     h: new Uint8Array(32).fill(1),
   }
   const data = encode(buf, msg);
-  expect(data.length).toBe(91);
+  expect(data.length).toBe(87);
   expect(decode(data)).toStrictEqual(msg);
 })
